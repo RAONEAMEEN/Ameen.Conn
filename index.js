@@ -6,9 +6,9 @@ const sessionRouter = require("./sessionRouter");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use('/api', sessionRouter);
+app.use('/', sessionRouter);
 
-app.get('/', (req, res) => {
+app.get('/api', (req, res) => {
   res.send('WhatsApp Bot Session API');
 });
 
