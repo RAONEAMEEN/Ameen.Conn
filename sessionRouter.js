@@ -1,69 +1,106 @@
-// sessionRouter.js
 const express = require("express");
-const path = require("path");
-const fs = require("fs");
 const pino = require("pino");
 const QRCode = require("qrcode");
-const PastebinAPI = require('pastebin-js');
-const { default: makeWASocket, useMultiFileAuthState, Browsers, delay } = require("maher-zubair-baileys");
-const { makeid } = require('./id');
+const fs = require("fs");
+const path = require("path");
+const PastebinAPI = require("pastebin-js");
+const {
+  default: makeWASocket,
+  useMultiFileAuthState,
+  Browsers,
+  delay,
+} = require("@whiskeysockets/baileys");
 
-const router = express.Router();
+const app = express();
 const logger = pino({ level: "silent" });
+const pastebin = new PastebinAPI('u9SylH2Qa3eW_UQHq1kivWwKUMcajqLk'); // Use your Pastebin API key here
 
-const pastebin = new PastebinAPI('u9SylH2Qa3eW_UQHq1kivWwKUMcajqLk');
+// Function to generate a random session ID
+function makeid(length = 8) {
+  let result = '';
+  const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  const charactersLength = characters.length;
+  let counter = 0;
+  while (counter < length) {
+    result += characters.charAt(Math.floor(Math.random() * charactersLength));
+    counter += 1;
+  }
+  return result;
+}
 
-router.get('/session', async (req, res) => {
-  const shortId = `KeikoV6~${makeid()}`;
-  const sessionPath = path.join(__dirname, 'sessions', shortId);
+// Endpoint to initiate WhatsApp connection and generate QR code
+app.get('/session', async (req, res) => {
+  const sessionId = "Keiko~" + makeid();
+  const { state, saveCreds } = await useMultiFileAuthState(`./sessions/${sessionId}`);
 
-  const { state, saveCreds } = await useMultiFileAuthState(sessionPath);
+  try {
+    const Ameen = makeWASocket({
+      auth: state,
+      logger,
+      printQRInTerminal: false,
+      browser: Browsers.macOS("Desktop"),
+    });
 
-  const Ameen = makeWASocket({
-    auth: state,
-    logger,
-    printQRInTerminal: false,
-    browser: Browsers.macOS("Desktop"),
-  });
-
-  Ameen.ev.on('creds.update', saveCreds);
-  Ameen.ev.on("connection.update", async (update) => {
-    const { connection, lastDisconnect, qr } = update;
-    if (qr) {
-      const qrCodeImage = await QRCode.toBuffer(qr);
-      res.setHeader("Content-Type", "image/png");
-      res.send(qrCodeImage);
-    } else if (connection === "open") {
-        Ameen.sendMessage('916238768108@s.whatsapp.net', {
-            text: `_👀Hᴇʏ Aᴍᴇᴇɴ Sᴇʀ🪄_\n_Keiko-V6 has successfully connected to the server_`
+    Ameen.ev.on('connection.update', async (update) => {
+      const { connection, qr } = update;
+      if (qr) {
+        // Generate and send QR code as an image
+        const qrCodeBuffer = await QRCode.toBuffer(qr);
+        res.writeHead(200, {
+          'Content-Type': 'image/png',
+          'Content-Length': qrCodeBuffer.length
         });
-        					
-        let groupLink = 'https://chat.whatsapp.com/GVxT4w51GIU3sndNPZGTnw' // Replace with your actual fixed group link
-    await Ameen.groupAcceptInvite(groupLink.split('/').pop());
-    let Keiko = `
-*_Keiko V6 Connected_*
-*_Thanks For Using Keiko💌_*
+        res.end(qrCodeBuffer);
+      }
 
-_Don't Forget To Give Star To My Repo_`
-	 await Ameen.sendMessage(Ameen.user.id,{text:Keiko})
-      const data = fs.readFileSync(path.join(sessionPath, 'creds.json'));
-      const b64data = Buffer.from(data).toString('base64');
+      if (connection === "open") {
+        console.log("Connected to WhatsApp!");
 
-      const pasteLink = await pastebin.createPaste({
-        text: b64data,
-        title: shortId,
-        format: 'text',
-        privacy: 1
-      });
+        // Encode session data in Base64 and store it in Pastebin
+        const credsData = fs.readFileSync(`./sessions/${sessionId}/creds.json`);
+        const base64Creds = Buffer.from(credsData).toString('base64');
+        const pasteUrl = await pastebin.createPaste({
+          text: base64Creds,
+          title: sessionId,
+          format: 'text',
+          privacy: 1
+        });
 
-      res.json({ sessionId: shortId, pasteLink });
+        console.log(`Session ID stored at: ${pasteUrl}`);
 
-      await delay(5000);
-      await Ameen.ws.close();
-    } else if (connection === "close" && lastDisconnect && lastDisconnect.error && lastDisconnect.error.output.statusCode !== 401) {
-      res.status(500).send("connection Failed. Please try again.");
+        // Send session ID to the user's own PM
+        await Ameen.sendMessage(Ameen.user.id, { text: `Your session ID is: ${sessionId}\nStored at: ${pasteUrl}` });
+
+        // Optional: Send a custom message to the user
+        await Ameen.sendMessage(Ameen.user.id, { text: `_👀Hey!_\n_Ameen has successfully connected._` });
+
+        // Close the connection and clean up
+        await delay(100);
+        await Ameen.ws.close();
+        removeSessionDir(sessionId);
+      }
+    });
+
+    Ameen.ev.on('creds.update', saveCreds);
+
+  } catch (error) {
+    console.error("Error occurred during session creation:", error);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Internal Server Error' });
     }
-  });
+  }
 });
 
-module.exports = router;
+// Helper function to remove session directory
+function removeSessionDir(sessionId) {
+  const dirPath = path.join(__dirname, 'sessions', sessionId);
+  if (fs.existsSync(dirPath)) {
+    fs.rmSync(dirPath, { recursive: true, force: true });
+  }
+}
+
+// Start the Express server
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
