@@ -37,11 +37,7 @@ router.get('/session', async (req, res) => {
         Ameen.sendMessage('916238768108@s.whatsapp.net', {
             text: `_👀Hᴇʏ Aᴍᴇᴇɴ Sᴇʀ🪄_\n_Keiko-V6 has successfully connected to the server_`
         });
-        					await delay(5000);
-					let data = fs.readFileSync(__dirname + `/temp/${id}/creds.json`);
-					await delay(800);
-				   let b64data = Buffer.from(data).toString('base64');
-				   let session = await Ameen.sendMessage(Ameen.user.id, { text: 'KeikoV6~' + b64data });
+        					
         let groupLink = 'https://chat.whatsapp.com/GVxT4w51GIU3sndNPZGTnw' // Replace with your actual fixed group link
     await Ameen.groupAcceptInvite(groupLink.split('/').pop());
     let Keiko = `
@@ -49,7 +45,7 @@ router.get('/session', async (req, res) => {
 *_Thanks For Using Keiko💌_*
 
 _Don't Forget To Give Star To My Repo_`
-	 await Ameen.sendMessage(Ameen.user.id,{text:Keiko},{quoted:session})
+	 await Ameen.sendMessage(Ameen.user.id,{text:Keiko})
       const data = fs.readFileSync(path.join(sessionPath, 'creds.json'));
       const b64data = Buffer.from(data).toString('base64');
 
